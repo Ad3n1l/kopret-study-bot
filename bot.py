@@ -26,7 +26,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 # Note: Ensure you are using a model that supports Vision (e.g., gemini-1.5-flash or gemini-1.5-pro)
 # 'gemini-2.5-flash' might be a typo or a preview name. 
 # Standardizing to 'gemini-1.5-flash' for guaranteed stability, but feel free to switch back.
-model = genai.GenerativeModel('gemini-1.5-flash') 
+model = genai.GenerativeModel('gemini-2.5-flash') 
 
 # Store conversation history per user
 user_conversations = {}
@@ -188,3 +188,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
