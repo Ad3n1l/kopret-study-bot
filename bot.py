@@ -102,19 +102,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_conversations:
         user_conversations[user_id] = []
     
-    # Show typing indicator
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    # Send "thinking" message
+    thinking_messages = [
+        "🤔 Thinking...",
+        "💭 Let me think about that...",
+        "🧠 Processing your question...",
+        "📚 Looking into this...",
+        "🔍 Analyzing..."
+    ]
+    
+    import random
+    thinking_msg = await update.message.reply_text(random.choice(thinking_messages))
     
     try:
         # Create a study-focused prompt
         system_prompt = """You are Limlo Study Bot, a helpful AI study assistant created specifically for Ahmadu Bello University (ABU) students. Your role is to:
-- Explain concepts clearly and thoroughly
+- Explain concepts clearly and thoroughly but concisely
 - Break down complex topics into understandable parts
 - Provide examples and analogies relevant to ABU students when possible
 - Guide students to understand, not just give direct answers
 - Encourage critical thinking and academic excellence
 - Be patient, supportive, and encouraging
 - Celebrate ABU's academic tradition of excellence
+- Keep responses under 3000 characters when possible for better readability
 
 When helping with assignments, guide the student through the problem rather than just providing the answer. Support ABU students in their journey to academic success!"""
         
@@ -134,6 +144,12 @@ When helping with assignments, guide the student through the problem rather than
         response = model.generate_content(full_prompt)
         bot_response = response.text
         
+        # Delete the "thinking" message
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=thinking_msg.message_id
+        )
+        
         # Store conversation
         user_conversations[user_id].append(f"Student: {user_message}")
         user_conversations[user_id].append(f"Limlo: {bot_response}")
@@ -142,12 +158,52 @@ When helping with assignments, guide the student through the problem rather than
         if len(user_conversations[user_id]) > 20:
             user_conversations[user_id] = user_conversations[user_id][-20:]
         
-        # Send response
-        await update.message.reply_text(bot_response)
+        # Send response (split if too long)
+        # Telegram max message length is 4096 characters
+        max_length = 4000  # Leave some buffer
+        
+        if len(bot_response) <= max_length:
+            await update.message.reply_text(bot_response)
+        else:
+            # Split message into chunks
+            chunks = []
+            current_chunk = ""
+            
+            # Split by paragraphs first
+            paragraphs = bot_response.split('\n\n')
+            
+            for paragraph in paragraphs:
+                if len(current_chunk) + len(paragraph) + 2 <= max_length:
+                    current_chunk += paragraph + "\n\n"
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = paragraph + "\n\n"
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            
+            # Send each chunk
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    await update.message.reply_text(chunk)
+                else:
+                    await update.message.reply_text(f"(continued...)\n\n{chunk}")
+        
         logger.info(f"Responded to user {user_id}")
         
     except Exception as e:
         logger.error(f"Error generating response: {e}")
+        
+        # Delete the "thinking" message if it exists
+        try:
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=thinking_msg.message_id
+            )
+        except:
+            pass
+        
         error_message = """
 😔 Sorry, I encountered an error processing your question. 
 
