@@ -19,7 +19,7 @@ if not GEMINI_API_KEY or not TELEGRAM_BOT_TOKEN:
     raise ValueError("Missing required environment variables: GEMINI_API_KEY and TELEGRAM_BOT_TOKEN")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # Store conversation history per user
 user_conversations = {}
