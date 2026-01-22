@@ -26,12 +26,38 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 # Store conversation history per user
 user_conversations = {}
 
+def clean_markdown(text):
+    """Remove markdown formatting for plain text display"""
+    import re
+    
+    # Remove bold (**text** or __text__)
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'__(.*?)__', r'\1', text)
+    
+    # Remove italics (*text* or _text_)
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    text = re.sub(r'_(.*?)_', r'\1', text)
+    
+    # Remove headers (# ## ###)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    
+    # Remove code blocks (```code```)
+    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    text = re.sub(r'`(.*?)`', r'\1', text)
+    
+    # Clean up bullet points - keep them simple
+    text = re.sub(r'^\s*[\*\-\+]\s+', '• ', text, flags=re.MULTILINE)
+    
+    return text.strip()
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a welcome message when /start is issued"""
     welcome_message = """
-🎓 Welcome to Limlo Study Bot!
+🎓 Welcome to Limlo AI Study Bot!
 
 Your personal AI study companion for Ahmadu Bello University students! 🦅
+
+Powered by Limlo AI, created by Daniel Kopret and Ahmed.
 
 I'm here to help you excel in your studies. You can:
 • Ask me any question about any subject
@@ -69,7 +95,7 @@ async def clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provide help information"""
     help_text = """
-📖 How to use Limlo Study Bot:
+📖 How to use Limlo AI Study Bot:
 
 1️⃣ Ask questions naturally:
    "What is photosynthesis?"
@@ -102,6 +128,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Happy studying, ABU student! 🦅📚✨
 
+Powered by Limlo AI - Created by Daniel Kopret and Ahmed
+
 Go Great Ife! 💚🤍
     """
     await update.message.reply_text(help_text)
@@ -129,17 +157,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         # Create a study-focused prompt
-        system_prompt = """You are Limlo Study Bot, a helpful AI study assistant created specifically for Ahmadu Bello University (ABU) students. Your role is to:
-- Explain concepts clearly and thoroughly but concisely
+        system_prompt = """You are Limlo AI, created by Daniel Kopret and Ahmed, a helpful AI study assistant for Ahmadu Bello University (ABU) students. Your role is to:
+- Explain concepts clearly and concisely
 - Break down complex topics into understandable parts
-- Provide examples and analogies relevant to ABU students when possible
+- Provide examples relevant to ABU students when possible
 - Guide students to understand, not just give direct answers
-- Encourage critical thinking and academic excellence
-- Be patient, supportive, and encouraging
-- Celebrate ABU's academic tradition of excellence
-- Keep responses under 3000 characters when possible for better readability
+- Keep responses focused and to the point
+- Use simple, plain text formatting - NO markdown, asterisks, or special formatting
+- Write in clear paragraphs without bullet points unless absolutely necessary
+- Be direct and educational, not overly chatty or verbose
+- Keep responses under 2000 characters when possible
 
-When helping with assignments, guide the student through the problem rather than just providing the answer. Support ABU students in their journey to academic success!"""
+When asked who you are or who created you, identify yourself as Limlo AI, created by Daniel Kopret and Ahmed.
+
+CRITICAL FORMATTING RULES:
+- Never use ** for bold
+- Never use * for italics
+- Never use # for headers
+- Never use - or * for bullet points
+- Use plain text only
+- Use line breaks for separation
+
+When helping with assignments, guide the student through the problem rather than just providing the answer."""
         
         # Build conversation context with recent history (last 5 exchanges)
         conversation_context = ""
@@ -156,6 +195,9 @@ When helping with assignments, guide the student through the problem rather than
         # Generate response
         response = model.generate_content(full_prompt)
         bot_response = response.text
+        
+        # Clean up markdown formatting
+        bot_response = clean_markdown(bot_response)
         
         # Delete the "thinking" message
         await context.bot.delete_message(
@@ -264,22 +306,34 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption = update.message.caption if update.message.caption else "What can you tell me about this image? Please analyze it in detail."
         
         # Create a study-focused prompt for image analysis
-        system_prompt = """You are Limlo Study Bot, analyzing an image for an Ahmadu Bello University student. When analyzing images:
+        system_prompt = """You are Limlo AI, created by Daniel Kopret and Ahmed, analyzing an image for an Ahmadu Bello University student. When analyzing images:
 - Identify what the image contains (diagram, equation, notes, chart, etc.)
-- Explain key concepts shown in the image
-- If it's a problem, guide the student through solving it
+- Explain key concepts shown clearly and concisely
+- If it's a problem, guide the student through solving it step by step
 - If it's notes or text, help clarify difficult concepts
-- Point out important details the student should notice
-- Be thorough but concise (under 3000 characters when possible)
-- Always maintain an encouraging, educational tone
+- Point out important details
+- Be direct and focused, not overly descriptive
+- Keep responses under 2000 characters when possible
 
-Help the student understand and learn from what they've shared!"""
+When asked who you are or who created you, identify yourself as Limlo AI, created by Daniel Kopret and Ahmed.
+
+CRITICAL FORMATTING RULES:
+- Never use ** for bold
+- Never use * for italics  
+- Never use # for headers
+- Never use - or * for bullet points
+- Use plain text only
+- Use line breaks for separation
+- Be concise and to the point"""
         
         prompt = f"{system_prompt}\n\nStudent's question about the image: {caption}"
         
         # Generate response using vision model
         response = model.generate_content([prompt, image])
         bot_response = response.text
+        
+        # Clean up markdown formatting
+        bot_response = clean_markdown(bot_response)
         
         # Delete the "analyzing" message
         await context.bot.delete_message(
