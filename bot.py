@@ -1,12 +1,10 @@
 import os
 import logging
-import io
-from datetime import datetime, timedelta
-from collections import defaultdict
-from PIL import Image
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import google.generativeai as genai
+from PIL import Image
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -15,29 +13,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configure API Keys
+# Configure Gemini API
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 if not GEMINI_API_KEY or not TELEGRAM_BOT_TOKEN:
-    raise ValueError(
-        "Missing required environment variables: GEMINI_API_KEY and TELEGRAM_BOT_TOKEN"
-    )
+    raise ValueError("Missing required environment variables: GEMINI_API_KEY and TELEGRAM_BOT_TOKEN")
 
 genai.configure(api_key=GEMINI_API_KEY)
-
-# Initialize Gemini model
-# Use gemini-1.5-flash for stable vision support
-# Alternatives: gemini-1.5-pro, gemini-2.0-flash-exp
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # Store conversation history per user
 user_conversations = {}
-
-# Rate limiting
-user_request_times = defaultdict(list)
-MAX_REQUESTS_PER_MINUTE = 10
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a welcome message when /start is issued"""
@@ -46,229 +33,346 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Your personal AI study companion for Ahmadu Bello University students! 🦅
 
-I can now see! 👀 
-• Send me a photo of your notes, assignments, or textbook pages
-• Add a caption to ask a specific question about the image
-• Or just chat with me normally for any academic help
+I'm here to help you excel in your studies. You can:
+• Ask me any question about any subject
+• Request explanations of complex topics
+• Get help with assignments (I'll guide you, not just give answers!)
+• Practice with quizzes and problems
+• Study for exams
+• 📸 Send images of diagrams, equations, or notes for analysis!
 
 Commands:
 /start - Show this welcome message
 /clear - Clear conversation history
 /help - Get help on how to use me
 
-Just send me your question (with or without a photo) and I'll help you learn! 📚
+Just send me your question or image and I'll do my best to help! 📚
+
+Go ABU Great Ife! 💚🤍
     """
     await update.message.reply_text(welcome_message)
     
+    # Initialize conversation for new users
     user_id = update.effective_user.id
     if user_id not in user_conversations:
         user_conversations[user_id] = []
+    
     logger.info(f"User {user_id} started the bot")
 
-
 async def clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Clear conversation history for the user"""
+    """Clear the conversation history for the user"""
     user_id = update.effective_user.id
     user_conversations[user_id] = []
     await update.message.reply_text("✅ Conversation history cleared! Starting fresh.")
     logger.info(f"User {user_id} cleared conversation history")
-
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provide help information"""
     help_text = """
 📖 How to use Limlo Study Bot:
 
-1️⃣ Image Analysis (NEW! 📸):
-   • Snap a photo of a math problem, diagram, or notes
-   • Add a caption like "Solve this" or "Explain this diagram"
-   • I'll analyze the image and help you understand it
-
-2️⃣ Text Questions:
-   • "What is photosynthesis?"
-   • "Explain Newton's laws of motion"
-   • "Help me understand calculus derivatives"
+1️⃣ Ask questions naturally:
+   "What is photosynthesis?"
+   "Explain Newton's laws of motion"
    
+2️⃣ Request step-by-step solutions:
+   "How do I solve quadratic equations?"
+   "Walk me through mitosis"
+   
+3️⃣ Get study tips:
+   "How can I memorize the periodic table?"
+   
+4️⃣ Practice problems:
+   "Give me a practice problem on algebra"
+
+5️⃣ 📸 Send images:
+   • Mathematical equations
+   • Diagrams and charts
+   • Handwritten notes
+   • Textbook pages
+   • Lab results
+   
+   Add a caption with your question about the image!
+
 💡 Tips:
-• Ensure photos are clear and well-lit for best results
-• I remember our conversation context
+• Be specific with your questions
+• I remember our conversation, so you can ask follow-up questions
 • Use /clear to start a new topic
-• Ask follow-up questions naturally
+• For images, add a caption describing what you need help with
 
-Commands:
-/start - Welcome message
-/clear - Clear conversation history
-/help - Show this help message
+Happy studying, ABU student! 🦅📚✨
 
-Happy studying, ABU student! 🦅
+Go Great Ife! 💚🤍
     """
     await update.message.reply_text(help_text)
 
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming messages (text or photo) and generate responses"""
+    """Handle incoming text messages and generate responses using Gemini"""
     user_id = update.effective_user.id
-    
-    # Rate limiting check
-    now = datetime.now()
-    user_request_times[user_id] = [
-        t for t in user_request_times[user_id] 
-        if now - t < timedelta(minutes=1)
-    ]
-    
-    if len(user_request_times[user_id]) >= MAX_REQUESTS_PER_MINUTE:
-        await update.message.reply_text(
-            "⏳ Slow down! Please wait a moment before sending more requests."
-        )
-        return
-    
-    user_request_times[user_id].append(now)
-    
-    # Get user message (caption if photo, text otherwise)
-    user_message = update.message.text or update.message.caption or "Analyze this image"
+    user_message = update.message.text
     
     # Initialize conversation history if needed
     if user_id not in user_conversations:
         user_conversations[user_id] = []
-
+    
     # Send "thinking" message
-    thinking_msg = await update.message.reply_text("🤔 Analyzing...")
-
+    thinking_messages = [
+        "🤔 Thinking...",
+        "💭 Let me think about that...",
+        "🧠 Processing your question...",
+        "📚 Looking into this...",
+        "🔍 Analyzing..."
+    ]
+    
+    import random
+    thinking_msg = await update.message.reply_text(random.choice(thinking_messages))
+    
     try:
-        # System prompt
+        # Create a study-focused prompt
         system_prompt = """You are Limlo Study Bot, a helpful AI study assistant created specifically for Ahmadu Bello University (ABU) students. Your role is to:
-
 - Explain concepts clearly and thoroughly but concisely
-- If analyzing an image, describe what you see and solve any problems present
 - Break down complex topics into understandable parts
+- Provide examples and analogies relevant to ABU students when possible
 - Guide students to understand, not just give direct answers
-- Use examples relevant to Nigerian students when possible
-- Keep responses under 3000 characters when possible for readability
+- Encourage critical thinking and academic excellence
+- Be patient, supportive, and encouraging
+- Celebrate ABU's academic tradition of excellence
+- Keep responses under 3000 characters when possible for better readability
 
-When helping with assignments, guide the student through the problem-solving process rather than just providing answers. Encourage critical thinking."""
-
-        # Prepare input for Gemini
-        gemini_input = []
+When helping with assignments, guide the student through the problem rather than just providing the answer. Support ABU students in their journey to academic success!"""
         
-        # Build context string with conversation history
-        recent_history = "\n".join(user_conversations[user_id][-6:])
-        context_str = f"{system_prompt}\n\n"
+        # Build conversation context with recent history (last 5 exchanges)
+        conversation_context = ""
+        recent_history = user_conversations[user_id][-10:]  # Last 10 messages (5 exchanges)
         
         if recent_history:
-            context_str += f"Recent History:\n{recent_history}\n\n"
+            conversation_context = "\n\nRecent conversation:\n"
+            for msg in recent_history:
+                conversation_context += f"{msg}\n"
         
-        context_str += f"Student Question: {user_message}"
-        gemini_input.append(context_str)
-
-        # Handle photo if present
-        if update.message.photo:
-            # Get the highest quality photo
-            photo_file = await context.bot.get_file(update.message.photo[-1].file_id)
-            
-            # Download to memory
-            image_stream = io.BytesIO()
-            await photo_file.download_to_memory(out=image_stream)
-            image_stream.seek(0)
-            
-            # Convert to PIL Image
-            image = Image.open(image_stream)
-            gemini_input.append(image)
-            logger.info(f"User {user_id} sent an image with caption: {user_message}")
-
-        # Generate response from Gemini
-        response = model.generate_content(gemini_input)
+        # Create full prompt
+        full_prompt = f"{system_prompt}{conversation_context}\n\nStudent question: {user_message}"
+        
+        # Generate response
+        response = model.generate_content(full_prompt)
         bot_response = response.text
-
-        # Delete thinking message
-        try:
-            await context.bot.delete_message(
-                chat_id=update.effective_chat.id, 
-                message_id=thinking_msg.message_id
-            )
-        except:
-            pass
-
-        # Update conversation history
-        if update.message.photo:
-            user_conversations[user_id].append(f"Student: {user_message} [Image Sent]")
-        else:
-            user_conversations[user_id].append(f"Student: {user_message}")
         
+        # Delete the "thinking" message
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=thinking_msg.message_id
+        )
+        
+        # Store conversation
+        user_conversations[user_id].append(f"Student: {user_message}")
         user_conversations[user_id].append(f"Limlo: {bot_response}")
         
         # Keep only last 20 messages to manage memory
         if len(user_conversations[user_id]) > 20:
             user_conversations[user_id] = user_conversations[user_id][-20:]
-
-        # Send response (handle long messages)
-        max_length = 4000
+        
+        # Send response (split if too long)
+        # Telegram max message length is 4096 characters
+        max_length = 4000  # Leave some buffer
+        
         if len(bot_response) <= max_length:
             await update.message.reply_text(bot_response)
         else:
-            # Split into chunks
-            for i in range(0, len(bot_response), max_length):
-                chunk = bot_response[i:i+max_length]
-                await update.message.reply_text(chunk)
-                
-        logger.info(f"Successfully responded to user {user_id}")
-
-    except genai.types.generation_types.BlockedPromptException:
-        try:
-            await context.bot.delete_message(
-                chat_id=update.effective_chat.id, 
-                message_id=thinking_msg.message_id
-            )
-        except:
-            pass
-        await update.message.reply_text(
-            "⚠️ That content was flagged by safety filters. Please rephrase your question or try a different image."
-        )
-        logger.warning(f"Blocked prompt for user {user_id}")
+            # Split message into chunks
+            chunks = []
+            current_chunk = ""
+            
+            # Split by paragraphs first
+            paragraphs = bot_response.split('\n\n')
+            
+            for paragraph in paragraphs:
+                if len(current_chunk) + len(paragraph) + 2 <= max_length:
+                    current_chunk += paragraph + "\n\n"
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = paragraph + "\n\n"
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            
+            # Send each chunk
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    await update.message.reply_text(chunk)
+                else:
+                    await update.message.reply_text(f"(continued...)\n\n{chunk}")
+        
+        logger.info(f"Responded to user {user_id}")
         
     except Exception as e:
-        logger.error(f"Error for user {user_id}: {e}", exc_info=True)
+        logger.error(f"Error generating response: {e}")
+        
+        # Delete the "thinking" message if it exists
         try:
             await context.bot.delete_message(
-                chat_id=update.effective_chat.id, 
+                chat_id=update.effective_chat.id,
                 message_id=thinking_msg.message_id
             )
         except:
             pass
-        await update.message.reply_text(
-            "😔 I had trouble processing that. Please try again or use /help for guidance."
-        )
+        
+        error_message = """
+😔 Sorry, I encountered an error processing your question. 
 
+Please try:
+• Rephrasing your question
+• Using /clear to start fresh
+• Asking a different question
+
+If the problem persists, please contact support.
+        """
+        await update.message.reply_text(error_message)
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming photos and analyze them using Gemini Vision"""
+    user_id = update.effective_user.id
+    
+    # Initialize conversation history if needed
+    if user_id not in user_conversations:
+        user_conversations[user_id] = []
+    
+    # Send "analyzing" message
+    analyzing_messages = [
+        "📸 Analyzing your image...",
+        "🔍 Examining the image...",
+        "👀 Looking at your image...",
+        "🧠 Processing the image...",
+        "📊 Analyzing the diagram..."
+    ]
+    
+    import random
+    thinking_msg = await update.message.reply_text(random.choice(analyzing_messages))
+    
+    try:
+        # Get the largest photo (highest resolution)
+        photo = update.message.photo[-1]
+        
+        # Download the photo
+        photo_file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await photo_file.download_as_bytearray()
+        
+        # Convert to PIL Image
+        image = Image.open(io.BytesIO(photo_bytes))
+        
+        # Get caption if provided
+        caption = update.message.caption if update.message.caption else "What can you tell me about this image? Please analyze it in detail."
+        
+        # Create a study-focused prompt for image analysis
+        system_prompt = """You are Limlo Study Bot, analyzing an image for an Ahmadu Bello University student. When analyzing images:
+- Identify what the image contains (diagram, equation, notes, chart, etc.)
+- Explain key concepts shown in the image
+- If it's a problem, guide the student through solving it
+- If it's notes or text, help clarify difficult concepts
+- Point out important details the student should notice
+- Be thorough but concise (under 3000 characters when possible)
+- Always maintain an encouraging, educational tone
+
+Help the student understand and learn from what they've shared!"""
+        
+        prompt = f"{system_prompt}\n\nStudent's question about the image: {caption}"
+        
+        # Generate response using vision model
+        response = model.generate_content([prompt, image])
+        bot_response = response.text
+        
+        # Delete the "analyzing" message
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=thinking_msg.message_id
+        )
+        
+        # Store conversation
+        user_conversations[user_id].append(f"Student: [Sent image] {caption}")
+        user_conversations[user_id].append(f"Limlo: {bot_response}")
+        
+        # Keep only last 20 messages to manage memory
+        if len(user_conversations[user_id]) > 20:
+            user_conversations[user_id] = user_conversations[user_id][-20:]
+        
+        # Send response (split if too long)
+        max_length = 4000
+        
+        if len(bot_response) <= max_length:
+            await update.message.reply_text(bot_response)
+        else:
+            # Split message into chunks
+            chunks = []
+            current_chunk = ""
+            
+            paragraphs = bot_response.split('\n\n')
+            
+            for paragraph in paragraphs:
+                if len(current_chunk) + len(paragraph) + 2 <= max_length:
+                    current_chunk += paragraph + "\n\n"
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = paragraph + "\n\n"
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            
+            # Send each chunk
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    await update.message.reply_text(chunk)
+                else:
+                    await update.message.reply_text(f"(continued...)\n\n{chunk}")
+        
+        logger.info(f"Analyzed image for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error analyzing image: {e}")
+        
+        # Delete the "analyzing" message if it exists
+        try:
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=thinking_msg.message_id
+            )
+        except:
+            pass
+        
+        error_message = """
+😔 Sorry, I encountered an error analyzing your image. 
+
+Please try:
+• Sending a clearer image
+• Adding a caption describing what you need help with
+• Making sure the image is not too large
+
+If the problem persists, please contact support.
+        """
+        await update.message.reply_text(error_message)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors caused by updates"""
-    logger.error(f"Update {update} caused error: {context.error}", exc_info=context.error)
-
+    logger.error(f"Update {update} caused error {context.error}")
 
 def main():
     """Start the bot"""
+    # Create application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    # Register command handlers
+    
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("clear", clear_history))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Register message handler (FIXED: proper filter syntax)
-    application.add_handler(MessageHandler(
-        (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, 
-        handle_message
-    ))
-
-    # Register error handler
+    # Add error handler
     application.add_error_handler(error_handler)
-
-    logger.info("🚀 Starting Limlo Study Bot...")
-    logger.info("Bot is ready to help ABU students! 🦅")
     
-    # Start polling
+    # Start the bot
+    logger.info("Starting Limlo Study Bot...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == '__main__':
     main()
-
