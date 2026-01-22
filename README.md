@@ -1,15 +1,27 @@
 # Limlo Study Bot - Railway Deployment Guide
 
-A Telegram study bot powered by Google Gemini AI for Ahmadu Bello University students.
+A Telegram study bot powered by Google Gemini AI with image recognition for Ahmadu Bello University students.
+
+## Features
+
+- ✅ AI-powered text responses using Google Gemini 2.5 Flash
+- ✅ 📸 Image recognition and analysis
+- ✅ Conversation memory (remembers context)
+- ✅ Study-focused guidance
+- ✅ Step-by-step explanations
+- ✅ ABU-branded experience
+- ✅ Message splitting for long responses
+- ✅ Thinking indicators
 
 ## Files Structure
 
 ```
 limlo-study-bot/
-├── bot.py              # Main bot code
-├── requirements.txt    # Python dependencies
+├── bot.py              # Main bot code with image recognition
+├── requirements.txt    # Python dependencies (includes Pillow)
 ├── Procfile           # Railway process configuration
 ├── runtime.txt        # Python version
+├── .gitignore         # Git ignore file
 └── README.md          # This file
 ```
 
@@ -64,9 +76,22 @@ limlo-study-bot/
 - `/help` - How to use the bot
 - `/clear` - Clear conversation history
 
+## How to Use Image Recognition
+
+Students can send images of:
+- 📐 Mathematical equations
+- 📊 Diagrams and charts
+- 📝 Handwritten notes
+- 📖 Textbook pages
+- 🧪 Lab results
+- 📈 Graphs and data
+
+Simply send a photo with an optional caption describing what you need help with!
+
 ## Features
 
 - ✅ AI-powered responses using Google Gemini
+- ✅ 📸 Image analysis and recognition
 - ✅ Conversation memory (remembers context)
 - ✅ Study-focused guidance
 - ✅ Step-by-step explanations
